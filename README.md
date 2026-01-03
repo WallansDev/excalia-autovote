@@ -44,14 +44,25 @@ cp env.example .env
 
 ## 🎯 Utilisation
 
-Lancer le script :
+### Méthode 1 : Script wrapper (recommandé)
+```bash
+python run_vote.py
+```
+
+### Méthode 2 : Module Python
 ```bash
 python -m excalia_autovote.main
 ```
 
-Ou avec Poetry :
+### Méthode 3 : Avec Poetry
 ```bash
 poetry run python -m excalia_autovote.main
+```
+
+### Méthode 4 : Après installation du package
+Si le package est installé avec `pip install -e .`, vous pouvez aussi utiliser :
+```bash
+excalia-autovote
 ```
 
 ## ⚠️ Notes importantes
@@ -70,6 +81,7 @@ excalia-autovote/
 │       ├── config.py          # Configuration
 │       ├── vote_sites.py      # Classes pour chaque site
 │       └── main.py            # Script principal
+├── run_vote.py                # Script wrapper pour exécution facile
 ├── env.example                # Exemple de configuration
 ├── pyproject.toml
 └── README.md
