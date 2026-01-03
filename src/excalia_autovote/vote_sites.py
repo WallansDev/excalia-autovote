@@ -39,54 +39,170 @@ class BaseVoteSite:
 class TopServeursVote(BaseVoteSite):
     """Gestion du vote sur top-serveurs.net."""
     
+    def _accept_cookies(self) -> bool:
+        """Accepte le pop-up de cookies."""
+        try:
+            print("[Top-Serveurs] Recherche du pop-up de cookies...")
+            time.sleep(1)
+            
+            # Sélecteurs communs pour les boutons d'acceptation de cookies
+            cookie_selectors = [
+                "//button[contains(text(), 'Accepter') or contains(text(), 'accepter')]",
+                "//button[contains(text(), 'J'accepte') or contains(text(), \"J'accepte\")]",
+                "//button[contains(text(), 'Tout accepter')]",
+                "//button[contains(@id, 'accept') or contains(@id, 'cookie')]",
+                "//button[contains(@class, 'accept') or contains(@class, 'cookie')]",
+                "//a[contains(text(), 'Accepter')]",
+                "//div[contains(@class, 'cookie')]//button",
+            ]
+            
+            for selector in cookie_selectors:
+                try:
+                    cookie_button = self.driver.find_element(By.XPATH, selector)
+                    if cookie_button.is_displayed():
+                        cookie_button.click()
+                        print("[Top-Serveurs] ✅ Cookies acceptés")
+                        time.sleep(1)
+                        return True
+                except NoSuchElementException:
+                    continue
+            
+            print("[Top-Serveurs] ⚠️ Aucun pop-up de cookies trouvé")
+            return False
+            
+        except Exception as e:
+            print(f"[Top-Serveurs] ⚠️ Erreur lors de l'acceptation des cookies: {e}")
+            return False
+    
+    def _handle_cloudflare(self) -> bool:
+        """Gère le captcha Cloudflare."""
+        try:
+            print("[Top-Serveurs] Vérification du défi Cloudflare...")
+            time.sleep(2)
+            
+            # Chercher l'iframe Cloudflare
+            cloudflare_selectors = [
+                "//iframe[contains(@src, 'cloudflare')]",
+                "//iframe[contains(@src, 'challenges.cloudflare.com')]",
+                "//iframe[contains(@id, 'cf-')]",
+                "//iframe[contains(@name, 'cf-')]",
+            ]
+            
+            iframe = None
+            for selector in cloudflare_selectors:
+                try:
+                    iframe = self.driver.find_element(By.XPATH, selector)
+                    if iframe.is_displayed():
+                        break
+                except NoSuchElementException:
+                    continue
+            
+            if iframe:
+                print("[Top-Serveurs] Iframe Cloudflare détectée")
+                # Basculer dans l'iframe
+                self.driver.switch_to.frame(iframe)
+                time.sleep(1)
+                
+                # Chercher la checkbox Cloudflare
+                checkbox_selectors = [
+                    "//input[@type='checkbox']",
+                    "//input[@id='challenge-stage']",
+                    "//label[contains(@class, 'cb')]",
+                ]
+                
+                for selector in checkbox_selectors:
+                    try:
+                        checkbox = self.wait_for_clickable(By.XPATH, selector, timeout=5)
+                        if checkbox.is_displayed():
+                            checkbox.click()
+                            print("[Top-Serveurs] ✅ Checkbox Cloudflare cochée")
+                            time.sleep(2)
+                            break
+                    except (TimeoutException, NoSuchElementException):
+                        continue
+                
+                # Revenir au contenu principal
+                self.driver.switch_to.default_content()
+                
+                # Attendre que Cloudflare valide (la page change ou l'iframe disparaît)
+                print("[Top-Serveurs] Attente de la validation Cloudflare...")
+                max_wait = 15
+                for _ in range(max_wait):
+                    try:
+                        # Vérifier si l'iframe existe encore
+                        self.driver.find_element(By.XPATH, "//iframe[contains(@src, 'cloudflare')]")
+                        time.sleep(1)
+                    except NoSuchElementException:
+                        print("[Top-Serveurs] ✅ Défi Cloudflare résolu")
+                        time.sleep(1)
+                        return True
+                
+                print("[Top-Serveurs] ⚠️ Timeout lors de la validation Cloudflare")
+                return False
+            else:
+                print("[Top-Serveurs] Aucun défi Cloudflare détecté")
+                return True
+                
+        except Exception as e:
+            print(f"[Top-Serveurs] ⚠️ Erreur lors de la gestion Cloudflare: {e}")
+            # Revenir au contenu principal en cas d'erreur
+            try:
+                self.driver.switch_to.default_content()
+            except:
+                pass
+            return False
+    
     def vote(self) -> bool:
-        """Vote sur top-serveurs.net (simple, pas de vérification)."""
+        """Vote sur top-serveurs.net (avec gestion cookies et Cloudflare)."""
         try:
             url = f"https://top-serveurs.net/minecraft/vote/excalia?pseudo={self.pseudo}"
             print(f"[Top-Serveurs] Accès à {url}")
             self.driver.get(url)
             
-            # Chercher le bouton de vote
-            try:
-                # Attendre un peu pour que la page se charge
-                time.sleep(2)
-                
-                # Chercher le bouton "Voter" (peut avoir différents sélecteurs)
-                vote_button_selectors = [
-                    "//button[contains(text(), 'Voter')]",
-                    "//input[@value='Voter']",
-                    "//a[contains(text(), 'Voter')]",
-                    "//button[contains(@class, 'vote')]",
-                    "//input[@type='submit']",
-                ]
-                
-                vote_button = None
-                for selector in vote_button_selectors:
-                    try:
-                        vote_button = self.driver.find_element(By.XPATH, selector)
-                        if vote_button.is_displayed():
-                            break
-                    except NoSuchElementException:
-                        continue
-                
-                if vote_button:
-                    vote_button.click()
-                    print("[Top-Serveurs] ✅ Vote effectué avec succès")
-                    time.sleep(2)
-                    return True
-                else:
-                    # Si pas de bouton trouvé, peut-être que le vote se fait automatiquement
-                    print("[Top-Serveurs] ⚠️ Aucun bouton trouvé, le vote peut être automatique")
-                    time.sleep(2)
-                    return True
-                    
-            except Exception as e:
-                print(f"[Top-Serveurs] ⚠️ Erreur lors de la recherche du bouton: {e}")
-                # Le vote peut être automatique juste en accédant à l'URL
+            # Attendre le chargement initial
+            time.sleep(3)
+            
+            # 1. Accepter les cookies
+            self._accept_cookies()
+            time.sleep(1)
+            
+            # 2. Gérer Cloudflare
+            self._handle_cloudflare()
+            time.sleep(2)
+            
+            # 3. Chercher et cliquer sur le bouton de vote
+            print("[Top-Serveurs] Recherche du bouton de vote...")
+            vote_button_selectors = [
+                "//button[contains(text(), 'Voter')]",
+                "//input[@value='Voter']",
+                "//a[contains(text(), 'Voter')]",
+                "//button[contains(@class, 'vote')]",
+                "//input[@type='submit']",
+                "//form//button[@type='submit']",
+            ]
+            
+            vote_button = None
+            for selector in vote_button_selectors:
+                try:
+                    vote_button = self.wait_for_clickable(By.XPATH, selector, timeout=5)
+                    if vote_button.is_displayed():
+                        break
+                except (TimeoutException, NoSuchElementException):
+                    continue
+            
+            if vote_button:
+                vote_button.click()
+                print("[Top-Serveurs] ✅ Vote effectué avec succès")
+                time.sleep(3)
                 return True
+            else:
+                print("[Top-Serveurs] ⚠️ Bouton de vote non trouvé")
+                return False
                 
         except Exception as e:
             print(f"[Top-Serveurs] ❌ Erreur: {e}")
+            import traceback
+            traceback.print_exc()
             return False
 
 
@@ -252,29 +368,46 @@ class ServeurMinecraftVote(BaseVoteSite):
 
 
 def create_driver(headless: bool = HEADLESS) -> webdriver.Chrome:
-    """Crée et configure le driver Selenium."""
-    from selenium.webdriver.chrome.options import Options
-    
-    options = Options()
-    if headless:
-        options.add_argument("--headless")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option('useAutomationExtension', False)
-    
-    service = Service(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=service, options=options)
-    
-    # Masquer le fait qu'on utilise Selenium
-    driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
-        'source': '''
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => undefined
-            })
-        '''
-    })
-    
-    return driver
+    """Crée et configure le driver Selenium avec undetected-chromedriver."""
+    try:
+        import undetected_chromedriver as uc
+        
+        # Utiliser undetected-chromedriver pour éviter la détection (notamment Cloudflare)
+        options = uc.ChromeOptions()
+        if headless:
+            options.add_argument("--headless=new")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-blink-features=AutomationControlled")
+        
+        driver = uc.Chrome(options=options, version_main=None)
+        return driver
+        
+    except ImportError:
+        # Fallback sur Selenium standard si undetected-chromedriver n'est pas disponible
+        print("⚠️ undetected-chromedriver non disponible, utilisation de Selenium standard")
+        from selenium.webdriver.chrome.options import Options
+        
+        options = Options()
+        if headless:
+            options.add_argument("--headless=new")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-blink-features=AutomationControlled")
+        options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        options.add_experimental_option('useAutomationExtension', False)
+        
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=options)
+        
+        # Masquer le fait qu'on utilise Selenium
+        driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
+            'source': '''
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined
+                })
+            '''
+        })
+        
+        return driver
 
