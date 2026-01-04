@@ -42,90 +42,47 @@ class TopServeursVote(BaseVoteSite):
     """Gestion du vote sur top-serveurs.net."""
     
     def _accept_cookies(self) -> bool:
-        """Accepte le pop-up de cookies."""
+        """Accepte le pop-up de cookies en cliquant sur 'autoriser'."""
         try:
             print("[Top-Serveurs] Recherche du pop-up de cookies...")
             time.sleep(3)
             
-            # Essayer d'abord avec des sélecteurs CSS (souvent plus fiables)
-            css_selectors = [
-                "button[id*='accept']",
-                "button[class*='accept']",
-                "button[id*='cookie']",
-                "button[class*='cookie']",
-                "a[id*='accept']",
-                "a[class*='accept']",
-                "[role='button'][aria-label*='accept']",
-                ".cookie-banner button",
-                "#cookie-banner button",
-                "[id*='cookie'][class*='button']",
-            ]
+            # Chercher le bouton "autoriser" (texte spécifique pour top-serveurs.net)
+            button_texts = ['autoriser', 'Autoriser', 'AUTORISER']
             
-            for selector in css_selectors:
+            # Méthode 1 : Chercher par texte exact
+            for text in button_texts:
                 try:
-                    elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
+                    xpath = f"//button[contains(text(), '{text}')]"
+                    elements = self.driver.find_elements(By.XPATH, xpath)
                     for element in elements:
                         try:
                             if element.is_displayed() and element.is_enabled():
-                                text = element.text.lower()
-                                if any(word in text for word in ['accepter', 'accept', 'ok', 'valider', 'tout']):
-                                    print(f"[Top-Serveurs] Bouton cookie trouvé (CSS): {selector}, texte: {element.text}")
-                                    self.driver.execute_script("arguments[0].scrollIntoView(true);", element)
-                                    time.sleep(0.5)
-                                    self.driver.execute_script("arguments[0].click();", element)
-                                    print("[Top-Serveurs] ✅ Cookies acceptés")
-                                    time.sleep(2)
-                                    return True
-                        except Exception as e:
-                            continue
-                except Exception:
-                    continue
-            
-            # Ensuite essayer avec XPath
-            xpath_selectors = [
-                "//button[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'accepter')]",
-                "//button[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'accept')]",
-                "//a[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'accepter')]",
-                "//button[contains(@id, 'accept')]",
-                "//button[contains(@class, 'accept')]",
-                "//button[contains(@id, 'cookie')]",
-                "//button[contains(@class, 'cookie')]",
-                "//div[contains(@class, 'cookie')]//button",
-                "//div[contains(@id, 'cookie')]//button",
-                "//*[contains(@class, 'cookie-banner')]//button",
-            ]
-            
-            for selector in xpath_selectors:
-                try:
-                    elements = self.driver.find_elements(By.XPATH, selector)
-                    for element in elements:
-                        try:
-                            if element.is_displayed() and element.is_enabled():
-                                print(f"[Top-Serveurs] Bouton cookie trouvé (XPath): {selector[:50]}..., texte: {element.text}")
+                                print(f"[Top-Serveurs] Bouton 'autoriser' trouvé: {element.text}")
                                 self.driver.execute_script("arguments[0].scrollIntoView(true);", element)
                                 time.sleep(0.5)
                                 self.driver.execute_script("arguments[0].click();", element)
-                                print("[Top-Serveurs] ✅ Cookies acceptés")
+                                print("[Top-Serveurs] ✅ Cookies autorisés")
                                 time.sleep(2)
                                 return True
-                        except Exception as e:
+                        except Exception:
                             continue
                 except Exception:
                     continue
             
-            # Dernière tentative : chercher tous les boutons visibles et filtrer
+            # Méthode 2 : Chercher tous les boutons et filtrer par texte
             try:
                 all_buttons = self.driver.find_elements(By.TAG_NAME, "button")
                 for button in all_buttons:
                     try:
-                        if button.is_displayed():
-                            text = button.text.lower()
-                            if any(word in text for word in ['accepter', 'accept', 'tout accepter']):
-                                print(f"[Top-Serveurs] Bouton cookie trouvé (tous les boutons): {text}")
+                        if button.is_displayed() and button.is_enabled():
+                            text = button.text.strip()
+                            if any(word.lower() in text.lower() for word in ['autoriser', 'autoriser']):
+                                print(f"[Top-Serveurs] Bouton 'autoriser' trouvé (tous les boutons): {text}")
                                 self.driver.execute_script("arguments[0].scrollIntoView(true);", button)
                                 time.sleep(0.5)
                                 self.driver.execute_script("arguments[0].click();", button)
-                                print("[Top-Serveurs] ✅ Cookies acceptés")
+                                print("[Top-Serveurs] ✅ Cookies autorisés")
                                 time.sleep(2)
                                 return True
                     except Exception:
@@ -133,8 +90,47 @@ class TopServeursVote(BaseVoteSite):
             except Exception:
                 pass
             
-            print("[Top-Serveurs] ⚠️ Aucun pop-up de cookies trouvé automatiquement")
-            print("[Top-Serveurs] 💡 Vous pouvez accepter les cookies manuellement...")
+            # Méthode 3 : Chercher avec XPath insensible à la casse
+            try:
+                xpath_insensitive = "//button[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'autoriser')]"
+                elements = self.driver.find_elements(By.XPATH, xpath_insensitive)
+                for element in elements:
+                    try:
+                        if element.is_displayed() and element.is_enabled():
+                            print(f"[Top-Serveurs] Bouton 'autoriser' trouvé (insensible casse): {element.text}")
+                            self.driver.execute_script("arguments[0].scrollIntoView(true);", element)
+                            time.sleep(0.5)
+                            self.driver.execute_script("arguments[0].click();", element)
+                            print("[Top-Serveurs] ✅ Cookies autorisés")
+                            time.sleep(2)
+                            return True
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+            
+            # Méthode 4 : Essayer aussi avec "accepter" au cas où
+            fallback_texts = ['accepter', 'Accepter', 'accept', 'Accept']
+            for text in fallback_texts:
+                try:
+                    xpath = f"//button[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{text.lower()}')]"
+                    elements = self.driver.find_elements(By.XPATH, xpath)
+                    for element in elements:
+                        try:
+                            if element.is_displayed() and element.is_enabled():
+                                print(f"[Top-Serveurs] Bouton cookie trouvé (fallback): {element.text}")
+                                self.driver.execute_script("arguments[0].scrollIntoView(true);", element)
+                                time.sleep(0.5)
+                                self.driver.execute_script("arguments[0].click();", element)
+                                print("[Top-Serveurs] ✅ Cookies acceptés")
+                                time.sleep(2)
+                                return True
+                        except Exception:
+                            continue
+                except Exception:
+                    continue
+            
+            print("[Top-Serveurs] ⚠️ Bouton 'autoriser' non trouvé automatiquement")
             return False
             
         except Exception as e:
@@ -221,20 +217,36 @@ class TopServeursVote(BaseVoteSite):
             # Attendre le chargement initial
             time.sleep(3)
             
-            # 1. Accepter les cookies
+            # 1. Accepter les cookies (cliquer sur "autoriser")
             cookies_accepted = self._accept_cookies()
             if not cookies_accepted:
-                print("[Top-Serveurs] ⚠️ Cookies non acceptés automatiquement")
-                print("[Top-Serveurs] 💡 Veuillez accepter les cookies manuellement si nécessaire")
+                print("[Top-Serveurs] ⚠️ Bouton 'autoriser' non trouvé automatiquement")
+                print("[Top-Serveurs] 💡 Veuillez cliquer sur 'autoriser' manuellement")
                 print("[Top-Serveurs] 💡 Appuyez sur Entrée pour continuer...")
                 input(">>> ")
             time.sleep(2)
             
-            # 2. Gérer Cloudflare
+            # 2. Définir le cookie vote_player avec le pseudo
+            try:
+                print(f"[Top-Serveurs] Définition du cookie 'vote_player' avec la valeur '{self.pseudo}'")
+                self.driver.add_cookie({
+                    'name': 'vote_player',
+                    'value': self.pseudo,
+                    'domain': 'top-serveurs.net',
+                    'path': '/'
+                })
+                print("[Top-Serveurs] ✅ Cookie 'vote_player' défini")
+                # Recharger la page pour que le cookie soit pris en compte
+                self.driver.refresh()
+                time.sleep(2)
+            except Exception as e:
+                print(f"[Top-Serveurs] ⚠️ Erreur lors de la définition du cookie: {e}")
+            
+            # 3. Gérer Cloudflare
             self._handle_cloudflare()
             time.sleep(3)
             
-            # 3. Chercher et cliquer sur le bouton de vote
+            # 4. Chercher et cliquer sur le bouton de vote
             print("[Top-Serveurs] Recherche du bouton de vote...")
             vote_button_selectors = [
                 "//button[contains(text(), 'Voter')]",
