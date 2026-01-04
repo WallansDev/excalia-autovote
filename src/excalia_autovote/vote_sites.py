@@ -140,7 +140,7 @@ class TopServeursVote(BaseVoteSite):
             return False
     
     def _handle_cloudflare(self) -> bool:
-        """Gère le captcha Cloudflare (Turnstile)."""
+        """Gère le captcha Cloudflare (Turnstile) - attend la validation automatique."""
         try:
             print("[Top-Serveurs] Vérification du défi Cloudflare...")
             time.sleep(4)
@@ -176,24 +176,32 @@ class TopServeursVote(BaseVoteSite):
                     continue
             
             if iframe:
-                print("[Top-Serveurs] Tentative de résolution du défi Cloudflare...")
-                print("[Top-Serveurs] ⚠️ Cloudflare détecté - résolution manuelle nécessaire")
-                print("[Top-Serveurs] 💡 Veuillez résoudre le captcha Cloudflare dans le navigateur")
-                print("[Top-Serveurs] 💡 Appuyez sur Entrée une fois le défi résolu...")
+                print("[Top-Serveurs] Défi Cloudflare détecté - attente de la validation automatique...")
+                print("[Top-Serveurs] 💡 Cloudflare devrait se valider automatiquement et recharger la page")
                 
-                # Attendre que l'utilisateur résolve manuellement
-                input(">>> ")
+                # Attendre que Cloudflare se valide automatiquement (la page se recharge ou l'iframe disparaît)
+                max_wait = 30  # Augmenter le temps d'attente
+                initial_url = self.driver.current_url
                 
-                # Vérifier si Cloudflare est résolu
-                time.sleep(2)
-                try:
-                    # Si l'iframe n'existe plus, c'est résolu
-                    self.driver.find_element(By.XPATH, "//iframe[contains(@src, 'challenges.cloudflare.com')]")
-                    print("[Top-Serveurs] ⚠️ Défi Cloudflare toujours présent")
-                except NoSuchElementException:
-                    print("[Top-Serveurs] ✅ Défi Cloudflare résolu")
+                for i in range(max_wait):
+                    try:
+                        # Vérifier si l'iframe existe encore
+                        self.driver.find_element(By.XPATH, "//iframe[contains(@src, 'challenges.cloudflare.com')]")
+                        # Si l'iframe existe encore, vérifier si l'URL a changé (rechargement)
+                        current_url = self.driver.current_url
+                        if current_url != initial_url:
+                            print("[Top-Serveurs] ✅ Page rechargée - Cloudflare validé")
+                            time.sleep(3)
+                            return True
+                        time.sleep(1)
+                    except NoSuchElementException:
+                        # L'iframe n'existe plus, Cloudflare est validé
+                        print("[Top-Serveurs] ✅ Défi Cloudflare résolu (iframe disparue)")
+                        time.sleep(2)
+                        return True
                 
-                return True
+                print("[Top-Serveurs] ⚠️ Timeout lors de l'attente de Cloudflare (mais on continue)")
+                return True  # On continue quand même
             else:
                 print("[Top-Serveurs] Aucun défi Cloudflare détecté")
                 return True
@@ -246,27 +254,39 @@ class TopServeursVote(BaseVoteSite):
             self._handle_cloudflare()
             time.sleep(3)
             
-            # 4. Chercher et cliquer sur le bouton de vote
+            # 4. Chercher et cliquer sur le bouton de vote (ID: btnSubmitVote)
             print("[Top-Serveurs] Recherche du bouton de vote...")
-            vote_button_selectors = [
-                "//button[contains(text(), 'Voter')]",
-                "//input[@value='Voter']",
-                "//a[contains(text(), 'Voter')]",
-                "//button[contains(@class, 'vote')]",
-                "//input[@type='submit']",
-                "//form//button[@type='submit']",
-            ]
-            
             vote_button = None
-            for selector in vote_button_selectors:
-                try:
-                    vote_button = self.wait_for_clickable(By.XPATH, selector, timeout=5)
-                    if vote_button.is_displayed():
-                        break
-                except (TimeoutException, NoSuchElementException):
-                    continue
+            
+            # Essayer d'abord avec l'ID spécifique
+            try:
+                vote_button = self.wait_for_clickable(By.ID, "btnSubmitVote", timeout=10)
+                if vote_button.is_displayed():
+                    print("[Top-Serveurs] Bouton de vote trouvé (ID: btnSubmitVote)")
+            except (TimeoutException, NoSuchElementException):
+                print("[Top-Serveurs] Bouton avec ID 'btnSubmitVote' non trouvé, recherche alternative...")
+                # Fallback sur d'autres sélecteurs
+                vote_button_selectors = [
+                    "//button[@id='btnSubmitVote']",
+                    "//button[contains(text(), 'Voter')]",
+                    "//input[@value='Voter']",
+                    "//a[contains(text(), 'Voter')]",
+                    "//button[contains(@class, 'vote')]",
+                    "//input[@type='submit']",
+                    "//form//button[@type='submit']",
+                ]
+                
+                for selector in vote_button_selectors:
+                    try:
+                        vote_button = self.wait_for_clickable(By.XPATH, selector, timeout=5)
+                        if vote_button.is_displayed():
+                            break
+                    except (TimeoutException, NoSuchElementException):
+                        continue
             
             if vote_button:
+                self.driver.execute_script("arguments[0].scrollIntoView(true);", vote_button)
+                time.sleep(0.5)
                 vote_button.click()
                 print("[Top-Serveurs] ✅ Vote effectué avec succès")
                 time.sleep(3)
