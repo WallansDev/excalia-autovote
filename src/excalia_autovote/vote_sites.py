@@ -208,8 +208,9 @@ class TopServeursVote(BaseVoteSite):
                     # Vérifier si l'URL a changé (rechargement de page)
                     current_url = self.driver.current_url
                     if current_url != initial_url:
-                        print("[Top-Serveurs] ✅ Page rechargée - Cloudflare validé")
+                        print("[Top-Serveurs] ✅ Page rechargée automatiquement - Cloudflare validé")
                         time.sleep(3)
+                        # Si la page s'est rechargée, le cookie devrait être déjà appliqué
                         return True
                     
                     # Attendre 1 seconde avant de revérifier
@@ -269,10 +270,25 @@ class TopServeursVote(BaseVoteSite):
                 print("[Top-Serveurs] ❌ Cloudflare non résolu - le vote ne peut pas continuer")
                 return False
             
-            # Après que Cloudflare soit validé, recharger pour appliquer le cookie
-            print("[Top-Serveurs] Rechargement de la page pour appliquer le cookie...")
-            self.driver.refresh()
-            time.sleep(4)
+            # Vérifier si la page a été rechargée automatiquement par Cloudflare
+            # Si oui, le cookie est déjà appliqué, sinon recharger
+            try:
+                # Vérifier si le cookie existe déjà
+                cookies = self.driver.get_cookies()
+                cookie_exists = any(cookie.get('name') == 'vote_player' for cookie in cookies)
+                
+                if not cookie_exists:
+                    print("[Top-Serveurs] Cookie non présent, rechargement de la page pour l'appliquer...")
+                    self.driver.refresh()
+                    time.sleep(4)
+                else:
+                    print("[Top-Serveurs] Cookie déjà présent, pas besoin de recharger")
+                    time.sleep(2)
+            except Exception as e:
+                print(f"[Top-Serveurs] ⚠️ Erreur lors de la vérification du cookie: {e}")
+                # En cas d'erreur, recharger pour être sûr
+                self.driver.refresh()
+                time.sleep(4)
             
             # 4. Chercher et cliquer sur le bouton de vote (ID: btnSubmitVote)
             print("[Top-Serveurs] Recherche du bouton de vote...")
@@ -305,9 +321,15 @@ class TopServeursVote(BaseVoteSite):
                         continue
             
             if vote_button:
-                self.driver.execute_script("arguments[0].scrollIntoView(true);", vote_button)
-                time.sleep(0.5)
-                vote_button.click()
+                # Utiliser JavaScript pour cliquer (contourne les éléments qui interceptent)
+                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", vote_button)
+                time.sleep(1)
+                # Vérifier que le bouton est activé
+                if not vote_button.is_enabled():
+                    print("[Top-Serveurs] ⚠️ Le bouton de vote est toujours désactivé")
+                    return False
+                # Cliquer avec JavaScript pour éviter ElementClickInterceptedException
+                self.driver.execute_script("arguments[0].click();", vote_button)
                 print("[Top-Serveurs] ✅ Vote effectué avec succès")
                 time.sleep(3)
                 return True
