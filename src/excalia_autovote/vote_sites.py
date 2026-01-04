@@ -140,10 +140,10 @@ class TopServeursVote(BaseVoteSite):
             return False
     
     def _handle_cloudflare(self) -> bool:
-        """Gère le captcha Cloudflare (Turnstile) - attend la validation automatique."""
+        """Gère le captcha Cloudflare (Turnstile) - attend passivement la validation automatique."""
         try:
             print("[Top-Serveurs] Vérification du défi Cloudflare...")
-            time.sleep(4)
+            time.sleep(3)
             
             # Chercher l'iframe Cloudflare Turnstile
             cloudflare_selectors = [
@@ -157,7 +157,6 @@ class TopServeursVote(BaseVoteSite):
             ]
             
             iframe = None
-            iframe_src = None
             for selector in cloudflare_selectors:
                 try:
                     iframes = self.driver.find_elements(By.XPATH, selector)
@@ -166,7 +165,7 @@ class TopServeursVote(BaseVoteSite):
                             if iframe_elem.is_displayed():
                                 iframe = iframe_elem
                                 iframe_src = iframe_elem.get_attribute('src')
-                                print(f"[Top-Serveurs] Iframe Cloudflare trouvée: {iframe_src[:50] if iframe_src else 'N/A'}...")
+                                print(f"[Top-Serveurs] Iframe Cloudflare détectée: {iframe_src[:50] if iframe_src else 'N/A'}...")
                                 break
                         except:
                             continue
@@ -176,44 +175,59 @@ class TopServeursVote(BaseVoteSite):
                     continue
             
             if iframe:
-                print("[Top-Serveurs] Défi Cloudflare détecté - attente de la validation automatique...")
-                print("[Top-Serveurs] 💡 Cloudflare devrait se valider automatiquement et recharger la page")
+                print("[Top-Serveurs] Défi Cloudflare détecté - attente passive de la validation...")
+                print("[Top-Serveurs] 💡 Ne pas interagir avec la page, laisser Cloudflare se valider automatiquement...")
                 
-                # Attendre que Cloudflare se valide automatiquement (la page se recharge ou l'iframe disparaît)
-                max_wait = 30  # Augmenter le temps d'attente
+                # Attendre PASSIVEMENT que Cloudflare se valide (ne rien faire, juste attendre)
+                # Vérifier si le bouton de vote devient actif (disabled disparaît)
+                max_wait = 60  # Attendre jusqu'à 60 secondes
                 initial_url = self.driver.current_url
                 
                 for i in range(max_wait):
                     try:
-                        # Vérifier si l'iframe existe encore
-                        self.driver.find_element(By.XPATH, "//iframe[contains(@src, 'challenges.cloudflare.com')]")
-                        # Si l'iframe existe encore, vérifier si l'URL a changé (rechargement)
-                        current_url = self.driver.current_url
-                        if current_url != initial_url:
-                            print("[Top-Serveurs] ✅ Page rechargée - Cloudflare validé")
-                            time.sleep(3)
+                        # Vérifier si le bouton de vote est activé (pas disabled)
+                        vote_button = self.driver.find_element(By.ID, "btnSubmitVote")
+                        if vote_button.is_enabled():
+                            print("[Top-Serveurs] ✅ Bouton de vote activé - Cloudflare validé")
+                            time.sleep(2)
                             return True
-                        time.sleep(1)
+                    except (NoSuchElementException, Exception):
+                        # Le bouton n'existe pas encore ou n'est pas activé
+                        pass
+                    
+                    # Vérifier aussi si l'iframe a disparu
+                    try:
+                        self.driver.find_element(By.XPATH, "//iframe[contains(@src, 'challenges.cloudflare.com')]")
+                        # L'iframe existe encore, continuer à attendre
                     except NoSuchElementException:
-                        # L'iframe n'existe plus, Cloudflare est validé
-                        print("[Top-Serveurs] ✅ Défi Cloudflare résolu (iframe disparue)")
+                        # L'iframe a disparu, Cloudflare est probablement validé
+                        print("[Top-Serveurs] ✅ Iframe Cloudflare disparue - validation probable")
                         time.sleep(2)
                         return True
+                    
+                    # Vérifier si l'URL a changé (rechargement de page)
+                    current_url = self.driver.current_url
+                    if current_url != initial_url:
+                        print("[Top-Serveurs] ✅ Page rechargée - Cloudflare validé")
+                        time.sleep(3)
+                        return True
+                    
+                    # Attendre 1 seconde avant de revérifier
+                    time.sleep(1)
+                    if i % 10 == 0 and i > 0:
+                        print(f"[Top-Serveurs] ⏳ Attente Cloudflare... ({i}/{max_wait}s)")
                 
-                print("[Top-Serveurs] ⚠️ Timeout lors de l'attente de Cloudflare (mais on continue)")
-                return True  # On continue quand même
+                print("[Top-Serveurs] ⚠️ Timeout lors de l'attente de Cloudflare")
+                return False
             else:
                 print("[Top-Serveurs] Aucun défi Cloudflare détecté")
                 return True
                 
         except Exception as e:
             print(f"[Top-Serveurs] ⚠️ Erreur lors de la gestion Cloudflare: {e}")
-            # Revenir au contenu principal en cas d'erreur
-            try:
-                self.driver.switch_to.default_content()
-            except:
-                pass
-            return True  # On continue quand même
+            import traceback
+            traceback.print_exc()
+            return False
     
     def vote(self) -> bool:
         """Vote sur top-serveurs.net (avec gestion cookies et Cloudflare)."""
@@ -223,7 +237,7 @@ class TopServeursVote(BaseVoteSite):
             self.driver.get(url)
             
             # Attendre le chargement initial
-            time.sleep(3)
+            time.sleep(5)
             
             # 1. Accepter les cookies (cliquer sur "autoriser")
             cookies_accepted = self._accept_cookies()
@@ -234,7 +248,7 @@ class TopServeursVote(BaseVoteSite):
                 input(">>> ")
             time.sleep(2)
             
-            # 2. Définir le cookie vote_player avec le pseudo
+            # 2. Définir le cookie vote_player avec le pseudo (AVANT Cloudflare)
             try:
                 print(f"[Top-Serveurs] Définition du cookie 'vote_player' avec la valeur '{self.pseudo}'")
                 self.driver.add_cookie({
@@ -244,15 +258,21 @@ class TopServeursVote(BaseVoteSite):
                     'path': '/'
                 })
                 print("[Top-Serveurs] ✅ Cookie 'vote_player' défini")
-                # Recharger la page pour que le cookie soit pris en compte
-                self.driver.refresh()
-                time.sleep(2)
+                # Ne PAS recharger la page maintenant, attendre que Cloudflare se valide
             except Exception as e:
                 print(f"[Top-Serveurs] ⚠️ Erreur lors de la définition du cookie: {e}")
             
-            # 3. Gérer Cloudflare
-            self._handle_cloudflare()
-            time.sleep(3)
+            # 3. Gérer Cloudflare - attendre passivement qu'il se valide
+            cloudflare_resolved = self._handle_cloudflare()
+            
+            if not cloudflare_resolved:
+                print("[Top-Serveurs] ❌ Cloudflare non résolu - le vote ne peut pas continuer")
+                return False
+            
+            # Après que Cloudflare soit validé, recharger pour appliquer le cookie
+            print("[Top-Serveurs] Rechargement de la page pour appliquer le cookie...")
+            self.driver.refresh()
+            time.sleep(4)
             
             # 4. Chercher et cliquer sur le bouton de vote (ID: btnSubmitVote)
             print("[Top-Serveurs] Recherche du bouton de vote...")
