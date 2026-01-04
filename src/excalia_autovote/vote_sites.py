@@ -1,4 +1,6 @@
 """Classes pour gérer les votes sur les différents sites."""
+import os
+import platform
 import time
 from typing import Optional
 from selenium import webdriver
@@ -43,28 +45,51 @@ class TopServeursVote(BaseVoteSite):
         """Accepte le pop-up de cookies."""
         try:
             print("[Top-Serveurs] Recherche du pop-up de cookies...")
-            time.sleep(1)
+            time.sleep(2)
             
             # Sélecteurs communs pour les boutons d'acceptation de cookies
             cookie_selectors = [
-                "//button[contains(text(), 'Accepter') or contains(text(), 'accepter')]",
-                "//button[contains(text(), 'J'accepte') or contains(text(), \"J'accepte\")]",
+                "//button[contains(text(), 'Accepter')]",
+                "//button[contains(text(), 'accepter')]",
+                "//button[contains(text(), \"J'accepte\")]",
+                "//button[contains(text(), 'J'accepte')]",
                 "//button[contains(text(), 'Tout accepter')]",
-                "//button[contains(@id, 'accept') or contains(@id, 'cookie')]",
-                "//button[contains(@class, 'accept') or contains(@class, 'cookie')]",
+                "//button[contains(text(), 'Tout accepter')]",
+                "//button[contains(@id, 'accept')]",
+                "//button[contains(@id, 'cookie')]",
+                "//button[contains(@class, 'accept')]",
+                "//button[contains(@class, 'cookie')]",
                 "//a[contains(text(), 'Accepter')]",
                 "//div[contains(@class, 'cookie')]//button",
+                "//div[contains(@id, 'cookie')]//button",
+                "//*[contains(@class, 'cookie')]//button[contains(text(), 'Accepter')]",
+                "//*[contains(@id, 'cookie')]//button",
             ]
             
+            # Essayer avec WebDriverWait d'abord
             for selector in cookie_selectors:
                 try:
-                    cookie_button = self.driver.find_element(By.XPATH, selector)
-                    if cookie_button.is_displayed():
-                        cookie_button.click()
+                    cookie_button = self.wait_for_clickable(By.XPATH, selector, timeout=3)
+                    if cookie_button and cookie_button.is_displayed():
+                        # Utiliser JavaScript click pour être plus fiable
+                        self.driver.execute_script("arguments[0].click();", cookie_button)
                         print("[Top-Serveurs] ✅ Cookies acceptés")
                         time.sleep(1)
                         return True
-                except NoSuchElementException:
+                except (TimeoutException, NoSuchElementException):
+                    continue
+            
+            # Si WebDriverWait ne fonctionne pas, essayer avec find_element
+            for selector in cookie_selectors:
+                try:
+                    elements = self.driver.find_elements(By.XPATH, selector)
+                    for element in elements:
+                        if element.is_displayed():
+                            self.driver.execute_script("arguments[0].click();", element)
+                            print("[Top-Serveurs] ✅ Cookies acceptés (méthode 2)")
+                            time.sleep(1)
+                            return True
+                except Exception:
                     continue
             
             print("[Top-Serveurs] ⚠️ Aucun pop-up de cookies trouvé")
@@ -75,70 +100,91 @@ class TopServeursVote(BaseVoteSite):
             return False
     
     def _handle_cloudflare(self) -> bool:
-        """Gère le captcha Cloudflare."""
+        """Gère le captcha Cloudflare (Turnstile)."""
         try:
             print("[Top-Serveurs] Vérification du défi Cloudflare...")
-            time.sleep(2)
+            time.sleep(3)
             
-            # Chercher l'iframe Cloudflare
+            # Chercher l'iframe Cloudflare Turnstile
             cloudflare_selectors = [
-                "//iframe[contains(@src, 'cloudflare')]",
                 "//iframe[contains(@src, 'challenges.cloudflare.com')]",
+                "//iframe[contains(@src, 'cloudflare')]",
+                "//iframe[contains(@src, 'turnstile')]",
                 "//iframe[contains(@id, 'cf-')]",
                 "//iframe[contains(@name, 'cf-')]",
+                "//iframe[@title*='challenge']",
             ]
             
             iframe = None
             for selector in cloudflare_selectors:
                 try:
-                    iframe = self.driver.find_element(By.XPATH, selector)
-                    if iframe.is_displayed():
+                    iframes = self.driver.find_elements(By.XPATH, selector)
+                    for iframe_elem in iframes:
+                        if iframe_elem.is_displayed():
+                            iframe = iframe_elem
+                            break
+                    if iframe:
                         break
                 except NoSuchElementException:
                     continue
             
             if iframe:
                 print("[Top-Serveurs] Iframe Cloudflare détectée")
-                # Basculer dans l'iframe
-                self.driver.switch_to.frame(iframe)
-                time.sleep(1)
-                
-                # Chercher la checkbox Cloudflare
-                checkbox_selectors = [
-                    "//input[@type='checkbox']",
-                    "//input[@id='challenge-stage']",
-                    "//label[contains(@class, 'cb')]",
-                ]
-                
-                for selector in checkbox_selectors:
-                    try:
-                        checkbox = self.wait_for_clickable(By.XPATH, selector, timeout=5)
-                        if checkbox.is_displayed():
-                            checkbox.click()
-                            print("[Top-Serveurs] ✅ Checkbox Cloudflare cochée")
-                            time.sleep(2)
-                            break
-                    except (TimeoutException, NoSuchElementException):
-                        continue
-                
-                # Revenir au contenu principal
-                self.driver.switch_to.default_content()
-                
-                # Attendre que Cloudflare valide (la page change ou l'iframe disparaît)
-                print("[Top-Serveurs] Attente de la validation Cloudflare...")
-                max_wait = 15
-                for _ in range(max_wait):
-                    try:
-                        # Vérifier si l'iframe existe encore
-                        self.driver.find_element(By.XPATH, "//iframe[contains(@src, 'cloudflare')]")
-                        time.sleep(1)
-                    except NoSuchElementException:
-                        print("[Top-Serveurs] ✅ Défi Cloudflare résolu")
-                        time.sleep(1)
-                        return True
-                
-                print("[Top-Serveurs] ⚠️ Timeout lors de la validation Cloudflare")
-                return False
+                try:
+                    # Basculer dans l'iframe
+                    self.driver.switch_to.frame(iframe)
+                    time.sleep(1)
+                    
+                    # Chercher la checkbox Cloudflare Turnstile
+                    checkbox_selectors = [
+                        "//input[@type='checkbox']",
+                        "//input[@id='challenge-stage']",
+                        "//label[contains(@class, 'cb')]",
+                        "//span[contains(@class, 'cb')]",
+                        "//div[contains(@class, 'mark')]",
+                    ]
+                    
+                    clicked = False
+                    for selector in checkbox_selectors:
+                        try:
+                            checkbox = self.wait_for_clickable(By.XPATH, selector, timeout=3)
+                            if checkbox.is_displayed():
+                                # Utiliser JavaScript pour cliquer (plus fiable)
+                                self.driver.execute_script("arguments[0].click();", checkbox)
+                                print("[Top-Serveurs] ✅ Checkbox Cloudflare cochée")
+                                clicked = True
+                                time.sleep(2)
+                                break
+                        except (TimeoutException, NoSuchElementException):
+                            continue
+                    
+                    # Revenir au contenu principal
+                    self.driver.switch_to.default_content()
+                    
+                    if clicked:
+                        # Attendre que Cloudflare valide (la page change ou l'iframe disparaît)
+                        print("[Top-Serveurs] Attente de la validation Cloudflare...")
+                        max_wait = 20
+                        for i in range(max_wait):
+                            try:
+                                # Vérifier si l'iframe existe encore
+                                self.driver.find_element(By.XPATH, "//iframe[contains(@src, 'challenges.cloudflare.com')]")
+                                time.sleep(1)
+                            except NoSuchElementException:
+                                print("[Top-Serveurs] ✅ Défi Cloudflare résolu")
+                                time.sleep(2)
+                                return True
+                        
+                        print("[Top-Serveurs] ⚠️ Timeout lors de la validation Cloudflare (mais on continue)")
+                        return True  # On continue quand même
+                    else:
+                        print("[Top-Serveurs] ⚠️ Checkbox Cloudflare non trouvée")
+                        return True  # On continue quand même
+                        
+                except Exception as e:
+                    print(f"[Top-Serveurs] ⚠️ Erreur dans l'iframe Cloudflare: {e}")
+                    self.driver.switch_to.default_content()
+                    return True  # On continue quand même
             else:
                 print("[Top-Serveurs] Aucun défi Cloudflare détecté")
                 return True
@@ -150,7 +196,7 @@ class TopServeursVote(BaseVoteSite):
                 self.driver.switch_to.default_content()
             except:
                 pass
-            return False
+            return True  # On continue quand même
     
     def vote(self) -> bool:
         """Vote sur top-serveurs.net (avec gestion cookies et Cloudflare)."""
@@ -379,8 +425,43 @@ def create_driver(headless: bool = HEADLESS) -> webdriver.Chrome:
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-blink-features=AutomationControlled")
+        options.add_argument("--disable-web-security")
+        options.add_argument("--disable-features=VizDisplayCompositor")
         
-        driver = uc.Chrome(options=options, version_main=None)
+        # Forcer l'utilisation de Chrome (pas Edge)
+        # Chercher Chrome dans les emplacements courants
+        chrome_paths = []
+        if platform.system() == "Windows":
+            chrome_paths = [
+                r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+                os.path.expanduser(r"~\AppData\Local\Google\Chrome\Application\chrome.exe"),
+            ]
+        elif platform.system() == "Darwin":  # macOS
+            chrome_paths = [
+                "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            ]
+        else:  # Linux
+            chrome_paths = [
+                "/usr/bin/google-chrome",
+                "/usr/bin/chromium-browser",
+                "/usr/bin/chromium",
+            ]
+        
+        chrome_binary = None
+        for path in chrome_paths:
+            if os.path.exists(path):
+                chrome_binary = path
+                break
+        
+        if chrome_binary:
+            options.binary_location = chrome_binary
+            print(f"🔍 Utilisation de Chrome trouvé à: {chrome_binary}")
+        else:
+            print("⚠️ Chrome non trouvé dans les emplacements standard, utilisation par défaut")
+        
+        driver = uc.Chrome(options=options, version_main=None, use_subprocess=True)
+        print("✅ Navigateur Chrome initialisé (undetected-chromedriver)")
         return driver
         
     except ImportError:
