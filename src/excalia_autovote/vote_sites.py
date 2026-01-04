@@ -45,65 +45,109 @@ class TopServeursVote(BaseVoteSite):
         """Accepte le pop-up de cookies."""
         try:
             print("[Top-Serveurs] Recherche du pop-up de cookies...")
-            time.sleep(2)
+            time.sleep(3)
             
-            # Sélecteurs communs pour les boutons d'acceptation de cookies
-            cookie_selectors = [
-                "//button[contains(text(), 'Accepter')]",
-                "//button[contains(text(), 'accepter')]",
-                "//button[contains(text(), \"J'accepte\")]",
-                "//button[contains(text(), 'J'accepte')]",
-                "//button[contains(text(), 'Tout accepter')]",
-                "//button[contains(text(), 'Tout accepter')]",
-                "//button[contains(@id, 'accept')]",
-                "//button[contains(@id, 'cookie')]",
-                "//button[contains(@class, 'accept')]",
-                "//button[contains(@class, 'cookie')]",
-                "//a[contains(text(), 'Accepter')]",
-                "//div[contains(@class, 'cookie')]//button",
-                "//div[contains(@id, 'cookie')]//button",
-                "//*[contains(@class, 'cookie')]//button[contains(text(), 'Accepter')]",
-                "//*[contains(@id, 'cookie')]//button",
+            # Essayer d'abord avec des sélecteurs CSS (souvent plus fiables)
+            css_selectors = [
+                "button[id*='accept']",
+                "button[class*='accept']",
+                "button[id*='cookie']",
+                "button[class*='cookie']",
+                "a[id*='accept']",
+                "a[class*='accept']",
+                "[role='button'][aria-label*='accept']",
+                ".cookie-banner button",
+                "#cookie-banner button",
+                "[id*='cookie'][class*='button']",
             ]
             
-            # Essayer avec WebDriverWait d'abord
-            for selector in cookie_selectors:
+            for selector in css_selectors:
                 try:
-                    cookie_button = self.wait_for_clickable(By.XPATH, selector, timeout=3)
-                    if cookie_button and cookie_button.is_displayed():
-                        # Utiliser JavaScript click pour être plus fiable
-                        self.driver.execute_script("arguments[0].click();", cookie_button)
-                        print("[Top-Serveurs] ✅ Cookies acceptés")
-                        time.sleep(1)
-                        return True
-                except (TimeoutException, NoSuchElementException):
-                    continue
-            
-            # Si WebDriverWait ne fonctionne pas, essayer avec find_element
-            for selector in cookie_selectors:
-                try:
-                    elements = self.driver.find_elements(By.XPATH, selector)
+                    elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
                     for element in elements:
-                        if element.is_displayed():
-                            self.driver.execute_script("arguments[0].click();", element)
-                            print("[Top-Serveurs] ✅ Cookies acceptés (méthode 2)")
-                            time.sleep(1)
-                            return True
+                        try:
+                            if element.is_displayed() and element.is_enabled():
+                                text = element.text.lower()
+                                if any(word in text for word in ['accepter', 'accept', 'ok', 'valider', 'tout']):
+                                    print(f"[Top-Serveurs] Bouton cookie trouvé (CSS): {selector}, texte: {element.text}")
+                                    self.driver.execute_script("arguments[0].scrollIntoView(true);", element)
+                                    time.sleep(0.5)
+                                    self.driver.execute_script("arguments[0].click();", element)
+                                    print("[Top-Serveurs] ✅ Cookies acceptés")
+                                    time.sleep(2)
+                                    return True
+                        except Exception as e:
+                            continue
                 except Exception:
                     continue
             
-            print("[Top-Serveurs] ⚠️ Aucun pop-up de cookies trouvé")
+            # Ensuite essayer avec XPath
+            xpath_selectors = [
+                "//button[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'accepter')]",
+                "//button[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'accept')]",
+                "//a[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'accepter')]",
+                "//button[contains(@id, 'accept')]",
+                "//button[contains(@class, 'accept')]",
+                "//button[contains(@id, 'cookie')]",
+                "//button[contains(@class, 'cookie')]",
+                "//div[contains(@class, 'cookie')]//button",
+                "//div[contains(@id, 'cookie')]//button",
+                "//*[contains(@class, 'cookie-banner')]//button",
+            ]
+            
+            for selector in xpath_selectors:
+                try:
+                    elements = self.driver.find_elements(By.XPATH, selector)
+                    for element in elements:
+                        try:
+                            if element.is_displayed() and element.is_enabled():
+                                print(f"[Top-Serveurs] Bouton cookie trouvé (XPath): {selector[:50]}..., texte: {element.text}")
+                                self.driver.execute_script("arguments[0].scrollIntoView(true);", element)
+                                time.sleep(0.5)
+                                self.driver.execute_script("arguments[0].click();", element)
+                                print("[Top-Serveurs] ✅ Cookies acceptés")
+                                time.sleep(2)
+                                return True
+                        except Exception as e:
+                            continue
+                except Exception:
+                    continue
+            
+            # Dernière tentative : chercher tous les boutons visibles et filtrer
+            try:
+                all_buttons = self.driver.find_elements(By.TAG_NAME, "button")
+                for button in all_buttons:
+                    try:
+                        if button.is_displayed():
+                            text = button.text.lower()
+                            if any(word in text for word in ['accepter', 'accept', 'tout accepter']):
+                                print(f"[Top-Serveurs] Bouton cookie trouvé (tous les boutons): {text}")
+                                self.driver.execute_script("arguments[0].scrollIntoView(true);", button)
+                                time.sleep(0.5)
+                                self.driver.execute_script("arguments[0].click();", button)
+                                print("[Top-Serveurs] ✅ Cookies acceptés")
+                                time.sleep(2)
+                                return True
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+            
+            print("[Top-Serveurs] ⚠️ Aucun pop-up de cookies trouvé automatiquement")
+            print("[Top-Serveurs] 💡 Vous pouvez accepter les cookies manuellement...")
             return False
             
         except Exception as e:
             print(f"[Top-Serveurs] ⚠️ Erreur lors de l'acceptation des cookies: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def _handle_cloudflare(self) -> bool:
         """Gère le captcha Cloudflare (Turnstile)."""
         try:
             print("[Top-Serveurs] Vérification du défi Cloudflare...")
-            time.sleep(3)
+            time.sleep(4)
             
             # Chercher l'iframe Cloudflare Turnstile
             cloudflare_selectors = [
@@ -113,78 +157,47 @@ class TopServeursVote(BaseVoteSite):
                 "//iframe[contains(@id, 'cf-')]",
                 "//iframe[contains(@name, 'cf-')]",
                 "//iframe[@title*='challenge']",
+                "//iframe[@title*='Widget']",
             ]
             
             iframe = None
+            iframe_src = None
             for selector in cloudflare_selectors:
                 try:
                     iframes = self.driver.find_elements(By.XPATH, selector)
                     for iframe_elem in iframes:
-                        if iframe_elem.is_displayed():
-                            iframe = iframe_elem
-                            break
+                        try:
+                            if iframe_elem.is_displayed():
+                                iframe = iframe_elem
+                                iframe_src = iframe_elem.get_attribute('src')
+                                print(f"[Top-Serveurs] Iframe Cloudflare trouvée: {iframe_src[:50] if iframe_src else 'N/A'}...")
+                                break
+                        except:
+                            continue
                     if iframe:
                         break
-                except NoSuchElementException:
+                except Exception:
                     continue
             
             if iframe:
-                print("[Top-Serveurs] Iframe Cloudflare détectée")
+                print("[Top-Serveurs] Tentative de résolution du défi Cloudflare...")
+                print("[Top-Serveurs] ⚠️ Cloudflare détecté - résolution manuelle nécessaire")
+                print("[Top-Serveurs] 💡 Veuillez résoudre le captcha Cloudflare dans le navigateur")
+                print("[Top-Serveurs] 💡 Appuyez sur Entrée une fois le défi résolu...")
+                
+                # Attendre que l'utilisateur résolve manuellement
+                input(">>> ")
+                
+                # Vérifier si Cloudflare est résolu
+                time.sleep(2)
                 try:
-                    # Basculer dans l'iframe
-                    self.driver.switch_to.frame(iframe)
-                    time.sleep(1)
-                    
-                    # Chercher la checkbox Cloudflare Turnstile
-                    checkbox_selectors = [
-                        "//input[@type='checkbox']",
-                        "//input[@id='challenge-stage']",
-                        "//label[contains(@class, 'cb')]",
-                        "//span[contains(@class, 'cb')]",
-                        "//div[contains(@class, 'mark')]",
-                    ]
-                    
-                    clicked = False
-                    for selector in checkbox_selectors:
-                        try:
-                            checkbox = self.wait_for_clickable(By.XPATH, selector, timeout=3)
-                            if checkbox.is_displayed():
-                                # Utiliser JavaScript pour cliquer (plus fiable)
-                                self.driver.execute_script("arguments[0].click();", checkbox)
-                                print("[Top-Serveurs] ✅ Checkbox Cloudflare cochée")
-                                clicked = True
-                                time.sleep(2)
-                                break
-                        except (TimeoutException, NoSuchElementException):
-                            continue
-                    
-                    # Revenir au contenu principal
-                    self.driver.switch_to.default_content()
-                    
-                    if clicked:
-                        # Attendre que Cloudflare valide (la page change ou l'iframe disparaît)
-                        print("[Top-Serveurs] Attente de la validation Cloudflare...")
-                        max_wait = 20
-                        for i in range(max_wait):
-                            try:
-                                # Vérifier si l'iframe existe encore
-                                self.driver.find_element(By.XPATH, "//iframe[contains(@src, 'challenges.cloudflare.com')]")
-                                time.sleep(1)
-                            except NoSuchElementException:
-                                print("[Top-Serveurs] ✅ Défi Cloudflare résolu")
-                                time.sleep(2)
-                                return True
-                        
-                        print("[Top-Serveurs] ⚠️ Timeout lors de la validation Cloudflare (mais on continue)")
-                        return True  # On continue quand même
-                    else:
-                        print("[Top-Serveurs] ⚠️ Checkbox Cloudflare non trouvée")
-                        return True  # On continue quand même
-                        
-                except Exception as e:
-                    print(f"[Top-Serveurs] ⚠️ Erreur dans l'iframe Cloudflare: {e}")
-                    self.driver.switch_to.default_content()
-                    return True  # On continue quand même
+                    # Si l'iframe n'existe plus, c'est résolu
+                    self.driver.find_element(By.XPATH, "//iframe[contains(@src, 'challenges.cloudflare.com')]")
+                    print("[Top-Serveurs] ⚠️ Défi Cloudflare toujours présent")
+                except NoSuchElementException:
+                    print("[Top-Serveurs] ✅ Défi Cloudflare résolu")
+                
+                return True
             else:
                 print("[Top-Serveurs] Aucun défi Cloudflare détecté")
                 return True
@@ -209,12 +222,17 @@ class TopServeursVote(BaseVoteSite):
             time.sleep(3)
             
             # 1. Accepter les cookies
-            self._accept_cookies()
-            time.sleep(1)
+            cookies_accepted = self._accept_cookies()
+            if not cookies_accepted:
+                print("[Top-Serveurs] ⚠️ Cookies non acceptés automatiquement")
+                print("[Top-Serveurs] 💡 Veuillez accepter les cookies manuellement si nécessaire")
+                print("[Top-Serveurs] 💡 Appuyez sur Entrée pour continuer...")
+                input(">>> ")
+            time.sleep(2)
             
             # 2. Gérer Cloudflare
             self._handle_cloudflare()
-            time.sleep(2)
+            time.sleep(3)
             
             # 3. Chercher et cliquer sur le bouton de vote
             print("[Top-Serveurs] Recherche du bouton de vote...")
